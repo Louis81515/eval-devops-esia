@@ -1,6 +1,3 @@
-"""Tests de /metrics : format Prometheus et labels attendus."""
-
-
 def test_metrics_content_type(client):
     resp = client.get("/metrics")
     assert resp.status_code == 200
@@ -8,7 +5,6 @@ def test_metrics_content_type(client):
 
 
 def test_request_counter_has_endpoint_and_code_labels(client):
-    """Une requête réelle incrémente le compteur avec ses labels."""
     client.get("/health")
     resp = client.get("/metrics")
     text = resp.text

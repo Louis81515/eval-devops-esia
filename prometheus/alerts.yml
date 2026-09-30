@@ -1,10 +1,6 @@
-# Règles d'alerte Prometheus pour l'application devops-eval-api.
-# À charger dans Prometheus via rule_files (voir README).
-
 groups:
   - name: devops-eval-api
     rules:
-      # --- Alerte 1 : taux d'erreurs 5xx élevé -----------------------------
       - alert: HighErrorRate5xx
         expr: |
           sum(rate(http_requests_total{code=~"5.."}[5m]))
@@ -19,15 +15,7 @@ groups:
           description: >-
             Plus de 5% des requêtes renvoient une erreur 5xx depuis 5 minutes
             (ratio erreurs/total calculé sur une fenêtre glissante de 5m).
-          # Justification du seuil et de la durée :
-          # - Seuil 5% : au-delà, une part significative des utilisateurs est
-          #   impactée ; en dessous, on s'expose à du bruit (erreurs isolées
-          #   toujours possibles en production).
-          # - for: 5m : une pointe de quelques secondes (redémarrage, coupure
-          #   réseau brève) ne doit pas paginer ; 5 minutes consécutives
-          #   au-dessus du seuil indiquent un vrai incident.
 
-      # --- Alerte 2 : latence dégradée (p95) -------------------------------
       - alert: HighLatencyP95
         expr: |
           histogram_quantile(
@@ -43,12 +31,3 @@ groups:
           description: >-
             Le temps de réponse p95 de la route {{ $labels.route }} dépasse
             500 ms depuis 10 minutes.
-          # Justification du seuil et de la durée :
-          # - Seuil 0,5 s : le p95 attendu d'une API légère + PostgreSQL est
-          #   < 100 ms ; 0,5 s traduit une dégradation franche (pool saturé,
-          #   requête SQL lente, CPU) tout en restant sous le seuil d'attente
-          #   visible côté utilisateur final (~1 s règle de Nielseen).
-          # - for: 10m : la latence est une métrique plus volatile que le taux
-          #   d'erreurs (GC, pics de trafic ponctuels) ; 10 minutes évitent
-          #   les faux positifs tout en restant réactif. Severity warning
-          #   (et non critical) car le service répond toujours.

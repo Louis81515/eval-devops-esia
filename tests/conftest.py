@@ -1,5 +1,3 @@
-"""Fixtures pytest : client HTTP de test + base nettoyée entre tests."""
-
 import os
 
 import psycopg
@@ -19,7 +17,6 @@ def client():
 
 @pytest.fixture(autouse=True)
 def clean_visits():
-    """Isole chaque test : la table visits est vidée avant chaque test."""
     url = os.environ["DATABASE_URL"]
     with psycopg.connect(url) as conn:
         conn.execute(

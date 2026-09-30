@@ -5,7 +5,6 @@ on:
   push:
     branches: [main]
 
-# Moindre privilège : la CI n'a besoin que de lire le dépôt.
 permissions:
   contents: read
 
@@ -59,7 +58,6 @@ jobs:
         python-version: ["3.11", "3.12"]
 
     services:
-      # PostgreSQL réellement utilisé par les tests (table visits).
       postgres:
         image: postgres:16-alpine
         env:
@@ -149,9 +147,6 @@ jobs:
         run: docker image inspect devops-eval-api:ci --format '{{ .Config.User }} {{ .Config.Healthcheck.Test }}'
 
   ci-ok:
-    # Job final obligatoire : c'est lui qui doit être requis dans les règles
-    # de protection de branche (il agrège lint, lint-yaml, test, build,
-    # tests-report).
     name: CI OK (agrégateur)
     runs-on: ubuntu-latest
     timeout-minutes: 3

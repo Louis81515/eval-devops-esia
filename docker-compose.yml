@@ -4,8 +4,6 @@ services:
       context: .
       args:
         GIT_SHA: ${GIT_SHA:-dev}
-    # Image par défaut locale ; le CD surcharge APP_IMAGE avec l'image ghcr
-    # exacte (nom du repo GitHub + tag) lors du pull et du rollback.
     image: ${APP_IMAGE:-devops-eval-api:local}
     ports:
       - "8000:8000"
@@ -15,7 +13,6 @@ services:
       db:
         condition: service_healthy
     healthcheck:
-      # Interroge réellement /health (qui vérifie aussi PostgreSQL).
       test:
         - CMD-SHELL
         - >-

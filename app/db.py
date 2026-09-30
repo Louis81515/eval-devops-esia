@@ -1,5 +1,3 @@
-"""Accès PostgreSQL : pool de connexions et requêtes."""
-
 import os
 
 import psycopg
@@ -16,11 +14,6 @@ _pool: ConnectionPool | None = None
 
 
 def init_db() -> None:
-    """Initialise le pool et crée la table si nécessaire.
-
-    La création de table est best-effort : si la base est injoignable au
-    démarrage, l'app démarre quand même et /health rapportera l'erreur.
-    """
     global _pool
     _pool = ConnectionPool(database_url(), min_size=1, max_size=5, timeout=2, open=True)
     try:
@@ -51,13 +44,11 @@ def pool() -> ConnectionPool:
 
 
 def ping() -> bool:
-    """Vrai si la base répond à un SELECT 1."""
     with pool().connection() as conn:
         return conn.execute("SELECT 1").fetchone() is not None
 
 
 def record_visit() -> int:
-    """Insère une visite et retourne le total en base."""
     with pool().connection() as conn:
         row = conn.execute(
             "INSERT INTO visits (created_at) VALUES (now()) RETURNING id"
@@ -75,7 +66,6 @@ def count_visits() -> int:
 
 
 def database_ready() -> bool:
-    """Ping tolérant aux erreurs, utilisé par /health."""
     try:
         return ping()
     except (psycopg.Error, PoolTimeout, OSError):

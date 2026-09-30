@@ -1,7 +1,5 @@
 name: CD
 
-# La CD ne se déclenche qu'après une CI verte sur main (workflow_run),
-# ou manuellement via workflow_dispatch avec choix de l'environnement.
 on:
   workflow_run:
     workflows: ["CI"]
@@ -17,14 +15,12 @@ on:
         options:
           - production
 
-# Moindre privilège : lecture du code + écriture sur ghcr.io uniquement.
 permissions:
   contents: read
   packages: write
 
 env:
   REGISTRY: ghcr.io
-  # Namespace = owner/repo (lowercase obligatoire sur ghcr).
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
@@ -49,7 +45,6 @@ jobs:
         id: meta
         run: |
           SHA_TAG="${GITHUB_SHA::7}"
-          # Semver auto-incrémentée : 0.1.<numéro de run CD>
           SEMVER="0.1.${{ github.run_number }}"
           REPO_LC="${REGISTRY}/${IMAGE_NAME,,}"
           {
@@ -57,7 +52,6 @@ jobs:
             echo "semver=$SEMVER"
             echo "repo=$REPO_LC"
           } >> "$GITHUB_OUTPUT"
-          # Les tags sont affichés (pas de secret), le token ne l'est jamais.
           echo "Tags : latest, $SHA_TAG, $SEMVER"
 
       - name: Build & Push (latest + SHA court + semver)
@@ -74,7 +68,6 @@ jobs:
   deploy:
     name: Déploiement (self-hosted runner)
     needs: build-push
-    # Déploiement réel : uniquement sur main ou via workflow_dispatch.
     if: >
       always() && needs.build-push.result == 'success' &&
       (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
@@ -103,8 +96,6 @@ jobs:
           IMAGE_TAG: ${{ needs.build-push.outputs.image-tag }}
           GHCR_NAMESPACE: ${{ github.repository }}
         run: |
-          # APP_IMAGE = nom exact poussé par le job build-push :
-          # ghcr.io/<owner>/<repo>:<tag> (convention GitHub Container Registry)
           export APP_IMAGE="${REGISTRY}/${GHCR_NAMESPACE,,}:$IMAGE_TAG"
           echo "Déploiement de $APP_IMAGE"
           docker compose -f "$GITHUB_WORKSPACE/docker-compose.yml" pull app

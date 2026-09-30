@@ -1,5 +1,3 @@
-"""API FastAPI : endpoints métier + health + métriques Prometheus."""
-
 import time
 from contextlib import asynccontextmanager
 
@@ -28,7 +26,6 @@ app = FastAPI(title="DevOps Eval API", version=APP_VERSION, lifespan=lifespan)
 
 @app.middleware("http")
 async def instrument_requests(request: Request, call_next):
-    """Mesure chaque requête : compteur labellisé + latence par route."""
     start = time.perf_counter()
     response = await call_next(request)
     duration = time.perf_counter() - start
@@ -43,7 +40,6 @@ async def instrument_requests(request: Request, call_next):
 
 @app.get("/health")
 def health() -> dict:
-    """Healthcheck : reflète l'état réel (connectivité PostgreSQL incluse)."""
     if not db.database_ready():
         return Response(status_code=503, content='{"status":"unhealthy"}')
     return {"status": "ok", "database": "up", "sha": GIT_SHA}
@@ -51,7 +47,6 @@ def health() -> dict:
 
 @app.post("/api/visits")
 def create_visit() -> dict:
-    """Enregistre une visite en base et retourne le total."""
     total = db.record_visit()
     return {"visits": total}
 
@@ -63,5 +58,4 @@ def get_visits() -> dict:
 
 @app.get("/metrics")
 def metrics() -> Response:
-    """Exposition des métriques au format texte Prometheus."""
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
