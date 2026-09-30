@@ -103,7 +103,10 @@ jobs:
           IMAGE_TAG: ${{ needs.build-push.outputs.image-tag }}
           GHCR_NAMESPACE: ${{ github.repository }}
         run: |
-          export GHCR_NAMESPACE="${GHCR_NAMESPACE,,}"
+          # APP_IMAGE = nom exact poussé par le job build-push :
+          # ghcr.io/<owner>/<repo>:<tag> (convention GitHub Container Registry)
+          export APP_IMAGE="${REGISTRY}/${GHCR_NAMESPACE,,}:$IMAGE_TAG"
+          echo "Déploiement de $APP_IMAGE"
           docker compose -f "$GITHUB_WORKSPACE/docker-compose.yml" pull app
           docker compose -f "$GITHUB_WORKSPACE/docker-compose.yml" up -d --remove-orphans
 
@@ -125,10 +128,10 @@ jobs:
           PREV_SHA: ${{ steps.prev.outputs.sha }}
           GHCR_NAMESPACE: ${{ github.repository }}
         run: |
-          export GHCR_NAMESPACE="${GHCR_NAMESPACE,,}"
+          export APP_IMAGE="${REGISTRY}/${GHCR_NAMESPACE,,}:$PREV_SHA"
           echo "Healthcheck en échec : rollback vers $PREV_SHA"
-          IMAGE_TAG="$PREV_SHA" docker compose -f "$GITHUB_WORKSPACE/docker-compose.yml" pull app
-          IMAGE_TAG="$PREV_SHA" docker compose -f "$GITHUB_WORKSPACE/docker-compose.yml" up -d --remove-orphans
+          docker compose -f "$GITHUB_WORKSPACE/docker-compose.yml" pull app
+          docker compose -f "$GITHUB_WORKSPACE/docker-compose.yml" up -d --remove-orphans
           curl --fail --silent --retry 3 --retry-delay 5 --retry-connrefused \
             http://localhost:8000/health
           echo "Rollback effectué vers le SHA $PREV_SHA."

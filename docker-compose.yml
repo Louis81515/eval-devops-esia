@@ -4,7 +4,9 @@ services:
       context: .
       args:
         GIT_SHA: ${GIT_SHA:-dev}
-    image: ghcr.io/${GHCR_NAMESPACE:-local}/devops-eval-api:${IMAGE_TAG:-latest}
+    # Image par défaut locale ; le CD surcharge APP_IMAGE avec l'image ghcr
+    # exacte (nom du repo GitHub + tag) lors du pull et du rollback.
+    image: ${APP_IMAGE:-devops-eval-api:local}
     ports:
       - "8000:8000"
     environment:
