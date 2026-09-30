@@ -1,0 +1,35 @@
+name: "Setup Python + dépendances"
+description: >
+  Action composite réutilisable : installe le runtime Python avec le cache
+  natif pip (actions/cache), puis installe les dépendances du projet.
+  Utilisée par les workflows CI et CD pour ne pas dupliquer ce bloc.
+
+inputs:
+  python-version:
+    description: "Version de Python à installer"
+    required: true
+  dev-deps:
+    description: "Installer aussi requirements-dev.txt (tests, lint)"
+    required: false
+    default: "false"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Setup Python avec cache pip
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+        cache: "pip"
+        cache-dependency-path: |
+          requirements.txt
+          requirements-dev.txt
+
+    - name: Installation des dépendances
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        if [ "${{ inputs.dev-deps }}" = "true" ]; then
+          pip install -r requirements-dev.txt
+        fi

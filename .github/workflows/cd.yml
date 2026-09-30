@@ -1,0 +1,135 @@
+name: CD
+
+# La CD ne se déclenche qu'après une CI verte sur main (workflow_run),
+# ou manuellement via workflow_dispatch avec choix de l'environnement.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environnement de déploiement"
+        type: choice
+        required: true
+        default: production
+        options:
+          - production
+
+# Moindre privilège : lecture du code + écriture sur ghcr.io uniquement.
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  # Namespace = owner/repo (lowercase obligatoire sur ghcr).
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-push:
+    name: Build & Push image (ghcr.io)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    outputs:
+      image-tag: ${{ steps.meta.outputs.sha-tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login sur ghcr.io (GITHUB_TOKEN, jamais affiché)
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
+
+      - name: Calcul des tags d'image
+        id: meta
+        run: |
+          SHA_TAG="${GITHUB_SHA::7}"
+          # Semver auto-incrémentée : 0.1.<numéro de run CD>
+          SEMVER="0.1.${{ github.run_number }}"
+          REPO_LC="${REGISTRY}/${IMAGE_NAME,,}"
+          {
+            echo "sha-tag=$SHA_TAG"
+            echo "semver=$SEMVER"
+            echo "repo=$REPO_LC"
+          } >> "$GITHUB_OUTPUT"
+          # Les tags sont affichés (pas de secret), le token ne l'est jamais.
+          echo "Tags : latest, $SHA_TAG, $SEMVER"
+
+      - name: Build & Push (latest + SHA court + semver)
+        run: |
+          docker build \
+            --build-arg GIT_SHA=${{ steps.meta.outputs.sha-tag }} \
+            --build-arg APP_VERSION=${{ steps.meta.outputs.semver }} \
+            -t "${{ steps.meta.outputs.repo }}:latest" \
+            -t "${{ steps.meta.outputs.repo }}:${{ steps.meta.outputs.sha-tag }}" \
+            -t "${{ steps.meta.outputs.repo }}:${{ steps.meta.outputs.semver }}" \
+            --push \
+            .
+
+  deploy:
+    name: Déploiement (self-hosted runner)
+    needs: build-push
+    # Déploiement réel : uniquement sur main ou via workflow_dispatch.
+    if: >
+      always() && needs.build-push.result == 'success' &&
+      (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
+    runs-on: [self-hosted, production]
+    timeout-minutes: 10
+    environment: ${{ github.event.inputs.environment || 'production' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Récupération du SHA actuellement déployé
+        id: prev
+        run: |
+          if [ -f "$HOME/.devops-eval-deployed-sha" ]; then
+            echo "sha=$(cat "$HOME/.devops-eval-deployed-sha")" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=none" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Login sur ghcr.io
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
+
+      - name: Pull & déploiement de la nouvelle version
+        env:
+          IMAGE_TAG: ${{ needs.build-push.outputs.image-tag }}
+          GHCR_NAMESPACE: ${{ github.repository }}
+        run: |
+          export GHCR_NAMESPACE="${GHCR_NAMESPACE,,}"
+          docker compose -f "$GITHUB_WORKSPACE/docker-compose.yml" pull app
+          docker compose -f "$GITHUB_WORKSPACE/docker-compose.yml" up -d --remove-orphans
+
+      - name: Vérification post-déploiement (healthcheck, 3 essais)
+        id: verify
+        run: |
+          curl --fail --silent --show-error \
+            --retry 3 --retry-delay 5 --retry-connrefused \
+            http://localhost:8000/health
+          echo "Healthcheck OK."
+
+      - name: Enregistrement du SHA déployé
+        if: success()
+        run: echo "${{ needs.build-push.outputs.image-tag }}" > "$HOME/.devops-eval-deployed-sha"
+
+      - name: Rollback (re-pull du SHA précédent)
+        if: failure() && steps.prev.outputs.sha != 'none'
+        env:
+          PREV_SHA: ${{ steps.prev.outputs.sha }}
+          GHCR_NAMESPACE: ${{ github.repository }}
+        run: |
+          export GHCR_NAMESPACE="${GHCR_NAMESPACE,,}"
+          echo "Healthcheck en échec : rollback vers $PREV_SHA"
+          IMAGE_TAG="$PREV_SHA" docker compose -f "$GITHUB_WORKSPACE/docker-compose.yml" pull app
+          IMAGE_TAG="$PREV_SHA" docker compose -f "$GITHUB_WORKSPACE/docker-compose.yml" up -d --remove-orphans
+          curl --fail --silent --retry 3 --retry-delay 5 --retry-connrefused \
+            http://localhost:8000/health
+          echo "Rollback effectué vers le SHA $PREV_SHA."
+          exit 1

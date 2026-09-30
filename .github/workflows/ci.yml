@@ -1,0 +1,167 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Moindre privilège : la CI n'a besoin que de lire le dépôt.
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python + dépendances
+        uses: ./.github/actions/setup-python
+        with:
+          python-version: "3.12"
+          dev-deps: "true"
+
+      - name: Ruff lint
+        run: ruff check app tests
+
+      - name: Ruff format check
+        run: ruff format --check app tests
+
+  lint-yaml:
+    name: Lint YAML
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python + dépendances
+        uses: ./.github/actions/setup-python
+        with:
+          python-version: "3.12"
+
+      - name: Yamllint
+        run: |
+          pip install yamllint==1.37.1
+          yamllint .
+
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    services:
+      # PostgreSQL réellement utilisé par les tests (table visits).
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: appdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U app -d appdb"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://app:app@localhost:5432/appdb
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python + dépendances (cache pip)
+        uses: ./.github/actions/setup-python
+        with:
+          python-version: ${{ matrix.python-version }}
+          dev-deps: "true"
+
+      - name: Attendre PostgreSQL
+        run: |
+          for i in $(seq 1 15); do
+            pg_isready -h localhost -p 5432 -U app && break
+            sleep 2
+          done
+
+      - name: Tests (pytest + coverage + rapport JUnit)
+        run: |
+          pytest tests/ -v \
+            --junitxml=junit-py${{ matrix.python-version }}.xml \
+            --cov=app \
+            --cov-report=xml:coverage-py${{ matrix.python-version }}.xml \
+            --cov-report=term
+
+      - name: Upload des rapports de test
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-py${{ matrix.python-version }}
+          path: |
+            junit-py${{ matrix.python-version }}.xml
+            coverage-py${{ matrix.python-version }}.xml
+          retention-days: 7
+
+  tests-report:
+    name: Consolidation des rapports
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: test
+    steps:
+      - name: Téléchargement des rapports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: test-reports-py*
+          merge-multiple: true
+          path: reports
+
+      - name: Vérification des rapports
+        run: |
+          ls -l reports/
+          test -f reports/junit-py3.11.xml
+          test -f reports/junit-py3.12.xml
+
+  build:
+    name: Build image Docker
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build de l'image (multi-stage)
+        run: |
+          docker build \
+            --build-arg GIT_SHA=${GITHUB_SHA::7} \
+            -t devops-eval-api:ci \
+            .
+
+      - name: Sanity check de l'image
+        run: docker image inspect devops-eval-api:ci --format '{{ .Config.User }} {{ .Config.Healthcheck.Test }}'
+
+  ci-ok:
+    # Job final obligatoire : c'est lui qui doit être requis dans les règles
+    # de protection de branche (il agrège lint, lint-yaml, test, build,
+    # tests-report).
+    name: CI OK (agrégateur)
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    if: always()
+    needs: [lint, lint-yaml, test, tests-report, build]
+    steps:
+      - name: Vérification que tous les jobs sont verts
+        run: |
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+            echo "Au moins un job de la CI a échoué, merge bloqué."
+            exit 1
+          fi
+          echo "Tous les jobs de la CI sont verts."

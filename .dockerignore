@@ -1,0 +1,16 @@
+# Exclusions minimales exigées + éléments inutiles au build
+.git
+.gitignore
+.github
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+tests
+prometheus
+docker-compose.yml
+README.md
+*.zip
+report.xml
+.coverage
