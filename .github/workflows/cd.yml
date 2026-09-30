@@ -113,7 +113,7 @@ jobs:
       - name: Vérification post-déploiement (healthcheck, 3 essais)
         id: verify
         run: |
-          curl --fail --silent --show-error \
+          curl --fail --silent --show-error --retry-all-errors \
             --retry 3 --retry-delay 5 --retry-connrefused \
             http://localhost:8000/health
           echo "Healthcheck OK."
@@ -132,7 +132,7 @@ jobs:
           echo "Healthcheck en échec : rollback vers $PREV_SHA"
           docker compose -f "$GITHUB_WORKSPACE/docker-compose.yml" pull app
           docker compose -f "$GITHUB_WORKSPACE/docker-compose.yml" up -d --remove-orphans
-          curl --fail --silent --retry 3 --retry-delay 5 --retry-connrefused \
+          curl --fail --silent --retry-all-errors --retry 3 --retry-delay 5 --retry-connrefused \
             http://localhost:8000/health
           echo "Rollback effectué vers le SHA $PREV_SHA."
           exit 1
