@@ -1,0 +1,5 @@
+[tool.pytest.ini_options]
+# Rend le paquet `app` importable depuis la racine du projet,
+# quelle que soit la façon de lancer pytest (python -m pytest ou pytest).
+pythonpath = ["."]
+testpaths = ["tests"]
